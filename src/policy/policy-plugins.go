@@ -4,6 +4,7 @@ import (
 	"errors"
 	"github.com/adshao/go-binance/v2"
 	"github.com/sirupsen/logrus"
+	"github.com/timerzz/go-quant/src/account"
 	"github.com/timerzz/go-quant/src/cfg"
 	"github.com/timerzz/go-quant/src/pusher"
 )
@@ -17,10 +18,10 @@ type Controller struct {
 	plugins []Policy
 }
 
-func NewController(cli *binance.Client, cfg *cfg.Config, pusher pusher.Pusher) *Controller {
+func NewController(cli *binance.Client, cfg *cfg.Config, pusher pusher.Pusher, actCtl *account.BinanceController) *Controller {
 	plugins := make([]Policy, 0, len(cfg.Policys))
 	for _, c := range cfg.Policys {
-		if plugin := NewPolicy(c, cfg.LogCfg.ExchangeLog, cli, pusher); plugin != nil {
+		if plugin := NewPolicy(c, cfg.LogCfg.ExchangeLog, cli, pusher, actCtl); plugin != nil {
 			plugins = append(plugins, plugin)
 		}
 	}

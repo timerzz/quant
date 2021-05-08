@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"github.com/shopspring/decimal"
+	"github.com/timerzz/go-quant/src/account"
 	"github.com/timerzz/go-quant/src/cfg"
 	"github.com/timerzz/go-quant/src/pusher"
 	"io"
 	"os"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/adshao/go-binance/v2"
@@ -30,15 +30,17 @@ type BasePolicy struct {
 	Log     *logrus.Logger
 	logPath string
 	Pusher  pusher.Pusher
+	ActCtl  *account.BinanceController
 }
 
-func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, pusher pusher.Pusher) *BasePolicy {
+func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, pusher pusher.Pusher, actCtl *account.BinanceController) *BasePolicy {
 	var p = &BasePolicy{
 		Symbol:  cfg.Coin + BaseCoin,
 		cli:     cli,
 		logPath: logPath,
 		Pusher:  pusher,
 		Cfg:     cfg,
+		ActCtl:  actCtl,
 	}
 	p.Run()
 	p.InitMaxQty()
@@ -97,22 +99,11 @@ func (b *BasePolicy) Sell(qty string) error {
 }
 
 func (b *BasePolicy) SellAll() error {
-	res, err := b.AccountData()
-	if err != nil {
-		b.Log.Error("account err ", err)
+	qty := b.ActCtl.Get(b.Cfg.Coin)
+	if decimal.NewFromInt(0).LessThan(qty) {
+		return b.Sell(qty.StringFixedBank(3))
 	}
-	qty := "0"
-	for _, ban := range res.Balances {
-		if strings.HasPrefix(b.Symbol, ban.Asset) {
-			free, _ := decimal.NewFromString(ban.Free)
-			if free.LessThanOrEqual(decimal.NewFromFloat(0)) {
-				return nil
-			}
-			qty = free.StringFixedBank(3)
-			break
-		}
-	}
-	return b.Sell(qty)
+	return nil
 }
 
 func (b *BasePolicy) TrackOrder(fun func() (*binance.CreateOrderResponse, error)) error {
@@ -145,40 +136,22 @@ func (b *BasePolicy) TrackOrder(fun func() (*binance.CreateOrderResponse, error)
 	return err
 }
 
-func (b *BasePolicy) AccountData() (res *binance.Account, err error) {
-	res, err = b.cli.NewGetAccountService().Do(context.Background())
-	return
-}
-
 func (b *BasePolicy) InitMaxQty() {
-	res, err := b.AccountData()
-	if err != nil {
-		b.Log.Error("account err", err)
-	}
-	for _, ban := range res.Balances {
-		if strings.HasSuffix(b.Symbol, ban.Asset) {
-			free, err := decimal.NewFromString(ban.Free)
-			if err != nil {
-				b.Log.Error("parseFree err ", err)
-				return
-			}
-			if b.Cfg.USDT < 1 {
-				if decimal.NewFromInt(0).LessThan(free) {
-					b.MaxQty = free.Mul(decimal.NewFromFloat(b.Cfg.USDT))
-				} else {
-					b.MaxQty = decimal.NewFromInt(0)
-				}
-			} else {
-				if decimal.NewFromFloat(b.Cfg.USDT).LessThan(free) {
-					b.MaxQty = decimal.NewFromFloat(b.Cfg.USDT)
-				} else {
-					b.MaxQty = free
-				}
-			}
-			b.Log.Infof("%s maxQty %s", b.Symbol, b.MaxQty.String())
-			break
+	free := b.ActCtl.Get(BaseCoin)
+	if b.Cfg.USDT < 1 {
+		if decimal.NewFromInt(0).LessThan(free) {
+			b.MaxQty = free.Mul(decimal.NewFromFloat(b.Cfg.USDT))
+		} else {
+			b.MaxQty = decimal.NewFromInt(0)
+		}
+	} else {
+		if decimal.NewFromFloat(b.Cfg.USDT).LessThan(free) {
+			b.MaxQty = decimal.NewFromFloat(b.Cfg.USDT)
+		} else {
+			b.MaxQty = free
 		}
 	}
+	b.Log.Infof("%s maxQty %s", b.Symbol, b.MaxQty.String())
 }
 
 //计算购买数量
