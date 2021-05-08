@@ -106,7 +106,7 @@ func (p *Policy) checkSell(closeP decimal.Decimal) {
 			msg = fmt.Sprintf("达到止损点，尝试卖出%s个%s, 大约亏", sellQty.StringFixedBank(3), p.Cfg.Coin)
 		}
 	}
-	if decimal.NewFromInt(0.1).LessThan(sellQty) && atomic.CompareAndSwapInt32(&p.lock, 0, 1) {
+	if decimal.NewFromFloat(0.1).LessThan(sellQty) && atomic.CompareAndSwapInt32(&p.lock, 0, 1) {
 		defer func() {
 			go time.AfterFunc(time.Second*time.Duration(p.Cfg.Interval), func() {
 				atomic.StoreInt32(&p.lock, 0)
