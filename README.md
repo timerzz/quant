@@ -6,15 +6,15 @@
 
 Name  | Status
 ------------  | ------------
-| 追涨杀跌| <input type="checkbox" checked> 
-| 底分型抄底| <input type="checkbox"> 
-| 趋势买卖| <input type="checkbox"> 
+| 追涨杀跌| [ x ]
+| 底分型抄底| [ ] 
+| 趋势买卖| [ ]
 
 ### 交易所支持
 Name  | Status
 ------------  | ------------
-| 币安| <input type="checkbox" checked>
-| 火币| <input type="checkbox">
+| 币安| [ x ]
+| 火币| [ ]
 
 ### Run
 - 构建
