@@ -70,16 +70,17 @@ func (b *BinanceController) Get(assert string) (dec decimal.Decimal) {
 	}
 	return
 }
-func (b *BinanceController) Run() {
+func (b *BinanceController) Run() error {
+	if err := b.init(); err != nil {
+		return err
+	}
 	go func() {
 		for b.run() != nil {
 		}
 	}()
+	return nil
 }
 func (b *BinanceController) run() (err error) {
-	if err = b.init(); err != nil {
-		return
-	}
 	var ctx context.Context
 	ctx, b.cancel = context.WithCancel(context.Background())
 	defer b.cancel()
