@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"github.com/timerzz/go-quant/src/account"
 	"github.com/timerzz/go-quant/src/api"
 	cfg2 "github.com/timerzz/go-quant/src/cfg"
@@ -29,7 +30,9 @@ func main() {
 	bark := pusher.NewBarkPush(config.PushCfg.BarkCfg)
 	//账户信息控制器
 	actCtl := account.NewBinanceController(client)
-	actCtl.Run()
+	if err = actCtl.Run(); err != nil {
+		logrus.Error("actCtl start err: ", err)
+	}
 	//初始化各策略
 	c := policy.NewController(client, config, bark, actCtl)
 	bark.Push("bark test")
