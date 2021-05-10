@@ -31,6 +31,7 @@ type BasePolicy struct {
 	logPath string
 	Pusher  pusher.Pusher
 	ActCtl  *account.BinanceController
+	ch      chan struct{}
 }
 
 func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, pusher pusher.Pusher, actCtl *account.BinanceController) *BasePolicy {
@@ -41,13 +42,16 @@ func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, push
 		Pusher:  pusher,
 		Cfg:     cfg,
 		ActCtl:  actCtl,
+		ch:      make(chan struct{}, 5),
 	}
+	p.ActCtl.AddListener(cfg.Coin, p.ch)
 	p.Run()
 	p.InitMaxQty()
 	return p
 }
 
 func (b *BasePolicy) Run() {
+	//初始化日志
 	b.Log = logrus.New()
 	p := path.Join(b.logPath, b.Cfg.Name, "log")
 	w, _ := rotatelogs.New(
@@ -58,6 +62,9 @@ func (b *BasePolicy) Run() {
 	)
 	fileAndStdoutWriter := io.MultiWriter(w, os.Stdout)
 	b.Log.SetOutput(fileAndStdoutWriter)
+
+	//更新maxQty
+	go b.listen()
 }
 
 func (b *BasePolicy) Buy(qty string) error {
@@ -171,4 +178,11 @@ func (b *BasePolicy) CalBuyQty() string {
 
 func (b *BasePolicy) String() string {
 	return fmt.Sprintf("%s-%s", b.Cfg.Name, b.Symbol)
+}
+
+func (b *BasePolicy) listen() {
+	for {
+		<-b.ch
+		b.InitMaxQty()
+	}
 }

@@ -29,7 +29,7 @@ func main() {
 	//初始化手机推送
 	bark := pusher.NewBarkPush(config.PushCfg.BarkCfg)
 	//账户信息控制器
-	actCtl := account.NewBinanceController(client)
+	actCtl := account.NewBinanceController(client, bark)
 	if err = actCtl.Run(); err != nil {
 		logrus.Error("actCtl start err: ", err)
 	}

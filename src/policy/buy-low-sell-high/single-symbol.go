@@ -119,6 +119,5 @@ func (p *Policy) checkSell(closeP decimal.Decimal) {
 		msg += sellQty.Mul(closeP.Sub(p.avg)).StringFixedBank(3)
 		p.Log.Infof(msg)
 		p.Pusher.Push(msg)
-		p.InitMaxQty()
 	}
 }
