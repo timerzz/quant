@@ -20,7 +20,7 @@ type Policy struct {
 
 func NewPolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, pusher pusher.Pusher, actCtl *account.BinanceController) *Policy {
 	return &Policy{
-		avg:        decimal.NewFromInt(0),
+		avg:        decimal.Zero,
 		BasePolicy: base.NewBasePolicy(cfg, logPath, cli, pusher, actCtl),
 	}
 }
@@ -61,26 +61,25 @@ func (p *Policy) checkBuy(closeP, openP decimal.Decimal) {
 				atomic.StoreInt32(&p.lock, 0)
 			})
 		}()
-		if qty := p.CalBuyQty(); qty != "" {
+		if qty := p.CalBuyQty(); decimal.Zero.LessThan(qty) {
 			coinQty := p.ActCtl.Get(p.Cfg.Coin) //当前的coin的个数
 			if err := p.Buy(qty); err != nil {
 				p.Log.Errorf("%s buy err:%v", p.Symbol, err)
 				return
 			}
-			coinValue := coinQty.Mul(p.avg)          //当前的coin价值的usdt=coin的个数乘以当前的均价
-			usdtQty, _ := decimal.NewFromString(qty) //用来购买的usdt个数
+			coinValue := coinQty.Mul(p.avg) //当前的coin价值的usdt=coin的个数乘以当前的均价
 			for p.ActCtl.Get(p.Cfg.Coin).Equal(coinQty) {
 				time.Sleep(time.Millisecond)
 			}
-			p.avg = coinValue.Add(usdtQty).Div(p.ActCtl.Get(p.Cfg.Coin))
+			p.avg = coinValue.Add(qty).Div(p.ActCtl.Get(p.Cfg.Coin))
 		}
 	}
 }
 
 func (p *Policy) checkSell(closeP decimal.Decimal) {
-	var sellQty = decimal.NewFromInt(0)
+	var sellQty = decimal.Zero
 	var msg = ""
-	if decimal.NewFromInt(0).LessThan(p.avg) {
+	if decimal.Zero.LessThan(p.avg) {
 		//止盈
 		var profit = closeP.Div(p.avg).Sub(decimal.NewFromInt(1))
 		var profitPoint = decimal.NewFromFloat(p.Cfg.ProfitPoint)
@@ -112,7 +111,7 @@ func (p *Policy) checkSell(closeP decimal.Decimal) {
 				atomic.StoreInt32(&p.lock, 0)
 			})
 		}()
-		if err := p.Sell(sellQty.StringFixedBank(3)); err != nil {
+		if err := p.Sell(sellQty); err != nil {
 			p.Log.Error("sell err", err)
 			return
 		}

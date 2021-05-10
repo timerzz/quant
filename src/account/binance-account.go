@@ -69,7 +69,7 @@ func (b *BinanceController) init() error {
 				Coin:     balance.Asset,
 				lasTime:  0,
 				qty:      free,
-				channels: make([]chan struct{}, 0),
+				channels: make([]chan BalanceChangeEvent, 0),
 			}
 		}
 	}
@@ -170,7 +170,7 @@ func (b *BinanceController) updateBalanceController(asset string, qty decimal.De
 			Coin:     asset,
 			lasTime:  lastTime,
 			qty:      qty,
-			channels: make([]chan struct{}, 0),
+			channels: make([]chan BalanceChangeEvent, 0),
 			lock:     sync.Mutex{},
 		}
 		return
@@ -178,7 +178,7 @@ func (b *BinanceController) updateBalanceController(asset string, qty decimal.De
 	balance.Update(qty, lastTime)
 }
 
-func (b *BinanceController) AddListener(asset string, ch chan struct{}) {
+func (b *BinanceController) AddListener(asset string, ch chan BalanceChangeEvent) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	balance, ok := b.balances[asset]
@@ -187,7 +187,7 @@ func (b *BinanceController) AddListener(asset string, ch chan struct{}) {
 			Coin:     asset,
 			lasTime:  0,
 			qty:      decimal.NewFromInt(0),
-			channels: []chan struct{}{ch},
+			channels: []chan BalanceChangeEvent{ch},
 			lock:     sync.Mutex{},
 		}
 		return
@@ -195,7 +195,7 @@ func (b *BinanceController) AddListener(asset string, ch chan struct{}) {
 	balance.AddListener(ch)
 }
 
-func (b *BinanceController) RmListener(asset string, ch chan struct{}) {
+func (b *BinanceController) RmListener(asset string, ch chan BalanceChangeEvent) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	balance, ok := b.balances[asset]
@@ -208,17 +208,22 @@ func (b *BinanceController) RmListener(asset string, ch chan struct{}) {
 // BalanceController 单个货币的控制器
 type BalanceController struct {
 	Coin     string
-	lasTime  uint64          //上次更新时间
-	qty      decimal.Decimal //货币数量
-	channels []chan struct{} //需要主动通知的chan
-	lock     sync.Mutex      //增删channel的锁
+	lasTime  uint64                    //上次更新时间
+	qty      decimal.Decimal           //货币数量
+	channels []chan BalanceChangeEvent //需要主动通知的chan
+	lock     sync.Mutex                //增删channel的锁
+}
+
+type BalanceChangeEvent struct {
+	Old decimal.Decimal
+	New decimal.Decimal
 }
 
 // Broadcast 通知更新
-func (b *BalanceController) Broadcast() {
+func (b *BalanceController) Broadcast(change BalanceChangeEvent) {
 	for _, c := range b.channels {
 		if c != nil {
-			c <- struct{}{}
+			c <- change
 		}
 	}
 }
@@ -226,20 +231,21 @@ func (b *BalanceController) Broadcast() {
 // Update 更新数量
 func (b *BalanceController) Update(qty decimal.Decimal, updateTime uint64) {
 	if updateTime > b.lasTime {
+		old := qty
 		b.lasTime, b.qty = updateTime, qty
-		b.Broadcast()
+		b.Broadcast(BalanceChangeEvent{New: qty, Old: old})
 	}
 }
 
 // AddListener 添加监听
-func (b *BalanceController) AddListener(ch chan struct{}) {
+func (b *BalanceController) AddListener(ch chan BalanceChangeEvent) {
 	b.lock.Lock()
 	b.channels = append(b.channels, ch)
 	b.lock.Unlock()
 }
 
 // RmListener 删除监听
-func (b *BalanceController) RmListener(ch chan struct{}) {
+func (b *BalanceController) RmListener(ch chan BalanceChangeEvent) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 	for i, v := range b.channels {

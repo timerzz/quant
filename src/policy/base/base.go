@@ -31,7 +31,8 @@ type BasePolicy struct {
 	logPath string
 	Pusher  pusher.Pusher
 	ActCtl  *account.BinanceController
-	ch      chan struct{}
+	avg     decimal.Decimal //均价
+	ch      chan account.BalanceChangeEvent
 }
 
 func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, pusher pusher.Pusher, actCtl *account.BinanceController) *BasePolicy {
@@ -42,7 +43,7 @@ func NewBasePolicy(cfg cfg.PolicysCfg, logPath string, cli *binance.Client, push
 		Pusher:  pusher,
 		Cfg:     cfg,
 		ActCtl:  actCtl,
-		ch:      make(chan struct{}, 5),
+		ch:      make(chan account.BalanceChangeEvent, 5),
 	}
 	p.ActCtl.AddListener(cfg.Coin, p.ch)
 	p.Run()
@@ -67,37 +68,31 @@ func (b *BasePolicy) Run() {
 	go b.listen()
 }
 
-func (b *BasePolicy) Buy(qty string) error {
-	if b.MaxQty.LessThanOrEqual(decimal.NewFromInt(10)) {
+func (b *BasePolicy) Buy(qty decimal.Decimal) error {
+	if b.MaxQty.LessThanOrEqual(decimal.NewFromInt(MINQTY)) {
 		b.Log.Infof("qty no enough")
 		return nil
 	}
-	b.Pusher.Push(fmt.Sprintf("尝试买入价值%s USDT的%s ", qty, b.Cfg.Coin))
 	return b.TrackOrder(func() (*binance.CreateOrderResponse, error) {
-		b.Log.Infof("%s buy , qty %s", b.Symbol, qty)
 		order, err := b.cli.NewCreateOrderService().Symbol(b.Symbol).
-			Side(binance.SideTypeBuy).Type(binance.OrderTypeMarket).QuoteOrderQty(qty).
+			Side(binance.SideTypeBuy).Type(binance.OrderTypeMarket).QuoteOrderQty(qty.StringFixedBank(3)).
 			Do(context.Background())
-		if err == nil {
-			deciQty, err := decimal.NewFromString(qty)
-			if err != nil {
-				b.Log.Error(err)
-			}
-			b.MaxQty = b.MaxQty.Sub(deciQty)
-			if order.Status == binance.OrderStatusTypeFilled {
-				b.Log.Infof("%s buy sucess, %v", b.Symbol, order)
-			}
+		if err == nil && order.Status == binance.OrderStatusTypeFilled {
+			price, avg, q := b.calAvg(order.Fills)
+			msg := fmt.Sprintf("以%s的均价，买入%s个%s，总价%s %s。", avg.StringFixedBank(3), q.StringFixedBank(3), b.Cfg.Coin, price.StringFixedBank(3), BaseCoin)
+			b.Log.Info(msg)
+			b.Pusher.Push(msg)
 		}
 		return order, err
 	})
 }
 
-func (b *BasePolicy) Sell(qty string) error {
+func (b *BasePolicy) Sell(qty decimal.Decimal) error {
 	//b.Pusher.Push(fmt.Sprintf("尝试卖出%s 个%s ", qty, b.Cfg.Coin))
 	return b.TrackOrder(func() (*binance.CreateOrderResponse, error) {
 		b.Log.Infof("%s sell , qty %s", b.Symbol, qty)
 		order, err := b.cli.NewCreateOrderService().Symbol(b.Symbol).
-			Side(binance.SideTypeSell).Type(binance.OrderTypeMarket).Quantity(qty).Do(context.Background())
+			Side(binance.SideTypeSell).Type(binance.OrderTypeMarket).Quantity(qty.StringFixedBank(1)).Do(context.Background())
 		if err == nil && order.Status == binance.OrderStatusTypeFilled {
 			b.Log.Infof("%s 卖出 %s 个", b.Symbol, qty)
 		}
@@ -107,8 +102,8 @@ func (b *BasePolicy) Sell(qty string) error {
 
 func (b *BasePolicy) SellAll() error {
 	qty := b.ActCtl.Get(b.Cfg.Coin)
-	if decimal.NewFromInt(0).LessThan(qty) {
-		return b.Sell(qty.StringFixedBank(3))
+	if decimal.Zero.LessThan(qty) {
+		return b.Sell(qty)
 	}
 	return nil
 }
@@ -146,10 +141,10 @@ func (b *BasePolicy) TrackOrder(fun func() (*binance.CreateOrderResponse, error)
 func (b *BasePolicy) InitMaxQty() {
 	free := b.ActCtl.Get(BaseCoin)
 	if b.Cfg.USDT < 1 {
-		if decimal.NewFromInt(0).LessThan(free) {
+		if decimal.Zero.LessThan(free) {
 			b.MaxQty = free.Mul(decimal.NewFromFloat(b.Cfg.USDT))
 		} else {
-			b.MaxQty = decimal.NewFromInt(0)
+			b.MaxQty = decimal.Zero
 		}
 	} else {
 		if decimal.NewFromFloat(b.Cfg.USDT).LessThan(free) {
@@ -161,19 +156,19 @@ func (b *BasePolicy) InitMaxQty() {
 	b.Log.Infof("%s maxQty %s", b.Symbol, b.MaxQty.String())
 }
 
-//计算购买数量
-func (b *BasePolicy) CalBuyQty() string {
+// CalBuyQty 计算购买数量
+func (b *BasePolicy) CalBuyQty() decimal.Decimal {
 	if (1 < b.Cfg.Buy && b.Cfg.Buy < MINQTY) || b.MaxQty.LessThan(decimal.NewFromInt(MINQTY)) {
-		return ""
+		return decimal.Zero
 	}
 	if 1 < b.Cfg.Buy {
-		return decimal.NewFromFloat(b.Cfg.Buy).StringFixedBank(3)
+		return decimal.NewFromFloat(b.Cfg.Buy)
 	}
 	targetNum := b.MaxQty.Mul(decimal.NewFromFloat(b.Cfg.Buy))
 	if targetNum.LessThan(decimal.NewFromInt(MINQTY)) {
-		return decimal.NewFromInt(MINQTY).StringFixedBank(3)
+		return decimal.NewFromInt(MINQTY)
 	}
-	return targetNum.StringFixedBank(3)
+	return targetNum
 }
 
 func (b *BasePolicy) String() string {
@@ -185,4 +180,16 @@ func (b *BasePolicy) listen() {
 		<-b.ch
 		b.InitMaxQty()
 	}
+}
+
+//计算均价
+func (b *BasePolicy) calAvg(fills []*binance.Fill) (prices, avg, qty decimal.Decimal) {
+	prices, qty = decimal.Zero, decimal.Zero
+	for _, fill := range fills {
+		p, _ := decimal.NewFromString(fill.Price)
+		q, _ := decimal.NewFromString(fill.Quantity)
+		prices, qty = prices.Add(p), qty.Add(q)
+	}
+	avg = prices.Div(qty)
+	return
 }
