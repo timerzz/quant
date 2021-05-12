@@ -31,7 +31,8 @@ type BasePolicy struct {
 	logPath string
 	Pusher  pusher.Pusher
 	ActCtl  *account.BinanceController
-	avg     decimal.Decimal //均价
+	BaseAvg decimal.Decimal //成本均价
+	buyAvg  decimal.Decimal //一次购买的均价
 	ch      chan account.BalanceChangeEvent
 }
 
@@ -79,6 +80,7 @@ func (b *BasePolicy) Buy(qty decimal.Decimal) error {
 			Do(context.Background())
 		if err == nil && order.Status == binance.OrderStatusTypeFilled {
 			price, avg, q := b.calAvg(order.Fills)
+			b.buyAvg = avg //乐观的认为上一个buyAvg已经被消费了
 			msg := fmt.Sprintf("以%s的均价，买入%s个%s，总价%s %s。", avg.StringFixedBank(3), q.StringFixedBank(3), b.Cfg.Coin, price.StringFixedBank(3), BaseCoin)
 			b.Log.Info(msg)
 			b.Pusher.Push(msg)
@@ -88,13 +90,18 @@ func (b *BasePolicy) Buy(qty decimal.Decimal) error {
 }
 
 func (b *BasePolicy) Sell(qty decimal.Decimal) error {
-	//b.Pusher.Push(fmt.Sprintf("尝试卖出%s 个%s ", qty, b.Cfg.Coin))
 	return b.TrackOrder(func() (*binance.CreateOrderResponse, error) {
-		b.Log.Infof("%s sell , qty %s", b.Symbol, qty)
+		b.Log.Infof("%s try sell , qty %s", b.Symbol, qty)
 		order, err := b.cli.NewCreateOrderService().Symbol(b.Symbol).
 			Side(binance.SideTypeSell).Type(binance.OrderTypeMarket).Quantity(qty.StringFixedBank(1)).Do(context.Background())
 		if err == nil && order.Status == binance.OrderStatusTypeFilled {
-			b.Log.Infof("%s 卖出 %s 个", b.Symbol, qty)
+			_, avg, q := b.calAvg(order.Fills)
+			msg := fmt.Sprintf("以%s的均价卖出%s个%s，预计盈亏%s",
+				avg.StringFixedBank(3),
+				q.StringFixedBank(3),
+				b.Cfg.Coin, avg.Sub(b.BaseAvg).Mul(q).StringFixedBank(3))
+			b.Log.Infof(msg)
+			b.Pusher.Push(msg)
 		}
 		return order, err
 	})
@@ -156,6 +163,24 @@ func (b *BasePolicy) InitMaxQty() {
 	b.Log.Infof("%s maxQty %s", b.Symbol, b.MaxQty.String())
 }
 
+//计算总的成本均价
+func (b *BasePolicy) calBaseAvg(event account.BalanceChangeEvent) {
+	//新增才重新计算
+	if event.Old.LessThan(event.New) {
+		for b.buyAvg.LessThanOrEqual(decimal.Zero) {
+			time.Sleep(time.Millisecond)
+		}
+		if b.BaseAvg.Equal(decimal.Zero) {
+			b.BaseAvg = b.buyAvg
+			b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(3), event.New.StringFixedBank(3)))
+			return
+		}
+		b.BaseAvg = b.BaseAvg.Mul(event.Old).Add(b.buyAvg.Mul(event.New.Sub(event.Old))).Div(event.New)
+		b.buyAvg = decimal.Zero
+		b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(3), event.New.StringFixedBank(3)))
+	}
+}
+
 // CalBuyQty 计算购买数量
 func (b *BasePolicy) CalBuyQty() decimal.Decimal {
 	if (1 < b.Cfg.Buy && b.Cfg.Buy < MINQTY) || b.MaxQty.LessThan(decimal.NewFromInt(MINQTY)) {
@@ -177,8 +202,9 @@ func (b *BasePolicy) String() string {
 
 func (b *BasePolicy) listen() {
 	for {
-		<-b.ch
+		event := <-b.ch
 		b.InitMaxQty()
+		b.calBaseAvg(event) //更新下成本
 	}
 }
 
