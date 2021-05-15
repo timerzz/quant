@@ -172,9 +172,11 @@ func (b *BasePolicy) InitMaxQty() {
 func (b *BasePolicy) calBaseAvg(event account.BalanceChangeEvent) {
 	//新增才重新计算
 	if event.Old.LessThan(event.New) {
+		b.Log.Infof("%s qty increase", b.Cfg.Coin)
 		for b.buyAvg.LessThanOrEqual(decimal.Zero) {
 			time.Sleep(time.Millisecond)
 		}
+		b.Log.Infof("buyAvg update")
 		if b.BaseAvg.Equal(decimal.Zero) {
 			b.BaseAvg = b.buyAvg
 			b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(3), event.New.StringFixedBank(3)))
@@ -209,6 +211,7 @@ func (b *BasePolicy) listen() {
 	for {
 		event := <-b.ch
 		b.InitMaxQty()
+		b.Log.Infof("update event %v", event)
 		b.calBaseAvg(event) //更新下成本
 	}
 }
