@@ -219,7 +219,7 @@ func (b *BasePolicy) calAvg(fills []*binance.Fill) (prices, avg, qty decimal.Dec
 	for _, fill := range fills {
 		p, _ := decimal.NewFromString(fill.Price)
 		q, _ := decimal.NewFromString(fill.Quantity)
-		prices, qty = prices.Add(p), qty.Add(q)
+		prices, qty = prices.Add(p.Mul(q)), qty.Add(q)
 	}
 	avg = prices.Div(qty)
 	return
