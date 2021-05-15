@@ -82,7 +82,7 @@ func (b *BasePolicy) Buy(qty decimal.Decimal) error {
 		if err == nil && order.Status == binance.OrderStatusTypeFilled {
 			price, avg, q := b.calAvg(order.Fills)
 			b.buyAvg = avg //乐观的认为上一个buyAvg已经被消费了
-			msg := fmt.Sprintf("以%s的均价，买入%s个%s，总价%s %s。", avg.StringFixedBank(3), q.StringFixedBank(3), b.Cfg.Coin, price.StringFixedBank(3), BaseCoin)
+			msg := fmt.Sprintf("以%s的均价，买入%s个%s，总价%s %s。", avg.StringFixedBank(5), q.StringFixedBank(3), b.Cfg.Coin, price.StringFixedBank(5), BaseCoin)
 			b.Log.Info(msg)
 			b.Pusher.Push(msg)
 		}
@@ -172,19 +172,17 @@ func (b *BasePolicy) InitMaxQty() {
 func (b *BasePolicy) calBaseAvg(event account.BalanceChangeEvent) {
 	//新增才重新计算
 	if event.Old.LessThan(event.New) {
-		b.Log.Infof("%s qty increase", b.Cfg.Coin)
 		for b.buyAvg.LessThanOrEqual(decimal.Zero) {
 			time.Sleep(time.Millisecond)
 		}
-		b.Log.Infof("buyAvg update")
 		if b.BaseAvg.Equal(decimal.Zero) {
 			b.BaseAvg = b.buyAvg
-			b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(3), event.New.StringFixedBank(3)))
+			b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(5), event.New.StringFixedBank(3)))
 			return
 		}
 		b.BaseAvg = b.BaseAvg.Mul(event.Old).Add(b.buyAvg.Mul(event.New.Sub(event.Old))).Div(event.New)
 		b.buyAvg = decimal.Zero
-		b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(3), event.New.StringFixedBank(3)))
+		b.Pusher.Push(fmt.Sprintf("当前%s的成本价为%s, 共%s个", b.Cfg.Coin, b.BaseAvg.StringFixedBank(5), event.New.StringFixedBank(3)))
 	}
 }
 

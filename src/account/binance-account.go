@@ -231,7 +231,7 @@ func (b *BalanceController) Broadcast(change BalanceChangeEvent) {
 // Update 更新数量
 func (b *BalanceController) Update(qty decimal.Decimal, updateTime uint64) {
 	if updateTime > b.lasTime {
-		old := qty
+		old := b.qty
 		b.lasTime, b.qty = updateTime, qty
 		b.Broadcast(BalanceChangeEvent{New: qty, Old: old})
 	}
