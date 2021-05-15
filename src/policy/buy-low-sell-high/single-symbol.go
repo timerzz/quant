@@ -103,11 +103,11 @@ func (p *Policy) checkSell(closeP decimal.Decimal) {
 				atomic.StoreInt32(&p.sellLock, 0)
 			})
 		}()
+		p.Log.Infof(msg)
 		if err := p.Sell(sellQty); err != nil {
 			p.Log.Error("sell err", err)
 			return
 		}
-		p.Log.Infof(msg)
 		p.Pusher.Push(msg)
 	}
 }

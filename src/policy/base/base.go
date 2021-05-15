@@ -33,6 +33,7 @@ type BasePolicy struct {
 	ActCtl  *account.BinanceController
 	BaseAvg decimal.Decimal //成本均价
 	buyAvg  decimal.Decimal //一次购买的均价
+	Profit  decimal.Decimal //预计累计的盈亏
 	ch      chan account.BalanceChangeEvent
 }
 
@@ -96,10 +97,14 @@ func (b *BasePolicy) Sell(qty decimal.Decimal) error {
 			Side(binance.SideTypeSell).Type(binance.OrderTypeMarket).Quantity(qty.StringFixedBank(1)).Do(context.Background())
 		if err == nil && order.Status == binance.OrderStatusTypeFilled {
 			_, avg, q := b.calAvg(order.Fills)
-			msg := fmt.Sprintf("以%s的均价卖出%s个%s，预计盈亏%s",
+			profit := avg.Sub(b.BaseAvg).Mul(q)
+			b.Profit = b.Profit.Add(profit)
+			msg := fmt.Sprintf("以%s的均价卖出%s个%s，预计盈亏%s,预计累计盈亏%s",
 				avg.StringFixedBank(3),
-				q.StringFixedBank(3),
-				b.Cfg.Coin, avg.Sub(b.BaseAvg).Mul(q).StringFixedBank(3))
+				q.StringFixedBank(1),
+				b.Cfg.Coin, profit.StringFixedBank(3),
+				b.Profit.StringFixedBank(3),
+			)
 			b.Log.Infof(msg)
 			b.Pusher.Push(msg)
 		}
