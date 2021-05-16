@@ -84,10 +84,10 @@ func (p *Policy) checkSell(closeP decimal.Decimal) {
 			sellQty = coinQty.Mul(decimal.NewFromFloat(0.95))
 			msg = fmt.Sprintf("达到3倍止盈点，尝试卖出%s个%s", sellQty.StringFixedBank(3), p.Cfg.Coin)
 		} else if profitPoint.Mul(decimal.NewFromInt(2)).LessThanOrEqual(profit) {
-			sellQty = coinQty.Mul(decimal.NewFromFloat(0.7))
+			sellQty = coinQty.Mul(decimal.NewFromFloat(0.75))
 			msg = fmt.Sprintf("达到2倍止盈点，尝试卖出%s个%s,", sellQty.StringFixedBank(3), p.Cfg.Coin)
 		} else if profitPoint.LessThanOrEqual(profit) {
-			sellQty = coinQty.Mul(decimal.NewFromFloat(0.6))
+			sellQty = coinQty.Mul(decimal.NewFromFloat(0.8))
 			msg = fmt.Sprintf("达到止盈点，尝试卖出%s个%s", sellQty.StringFixedBank(3), p.Cfg.Coin)
 		} else if profit.LessThanOrEqual(lossPoint.Mul(decimal.NewFromFloat(1.5))) {
 			msg = fmt.Sprintf("达到1.5倍止损点，尝试卖出%s个%s", sellQty.StringFixedBank(3), p.Cfg.Coin)

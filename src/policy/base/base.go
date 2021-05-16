@@ -99,7 +99,7 @@ func (b *BasePolicy) Sell(qty decimal.Decimal) error {
 			_, avg, q := b.calAvg(order.Fills)
 			profit := avg.Sub(b.BaseAvg).Mul(q)
 			b.Profit = b.Profit.Add(profit)
-			msg := fmt.Sprintf("以%s的均价卖出%s个%s，预计盈亏%s,预计累计盈亏%s",
+			msg := fmt.Sprintf("以%s的均价卖出%s个%s，预计盈亏%s, 累计盈亏%s",
 				avg.StringFixedBank(3),
 				q.StringFixedBank(1),
 				b.Cfg.Coin, profit.StringFixedBank(3),
